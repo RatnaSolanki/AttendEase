@@ -13,8 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   MapPin,
   Building2,
@@ -63,10 +61,6 @@ export function OrganizationView() {
     radius?: string;
   }>({});
 
-  useEffect(() => {
-    fetchOrganizationData();
-  }, [user?.uid]);
-
   const fetchOrganizationData = async () => {
     if (!user?.uid) return;
     setLoading(true);
@@ -95,6 +89,11 @@ export function OrganizationView() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchOrganizationData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
 
   const isDirty = useMemo(() => {
     if (!initialSnapshot) return false;
@@ -174,7 +173,7 @@ export function OrganizationView() {
     try {
       await navigator.clipboard.writeText(`${latitude}, ${longitude}`);
       toast.success("Coordinates copied");
-    } catch (err) {
+    } catch {
       toast.error("Failed to copy");
     }
   };

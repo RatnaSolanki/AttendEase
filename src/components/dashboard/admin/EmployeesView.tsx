@@ -29,7 +29,6 @@ import {
   Briefcase,
   Calendar,
   Settings2,
-  CheckCircle2,
 } from "lucide-react";
 import { AddEmployeeDialog } from "./AddEmployeeDialog";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
@@ -138,7 +137,6 @@ export function EmployeesView() {
 
   const [showAddDialog, setShowAddDialog] = useState<boolean>(false);
   const [deleteTarget, setDeleteTarget] = useState<UIEmployee | null>(null);
-  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
 
   const fetchEmployees = useCallback(async () => {
     if (!user?.uid) return;
@@ -255,7 +253,6 @@ export function EmployeesView() {
 
   const handleDeleteEmployee = async () => {
     if (!deleteTarget) return;
-    setIsDeletingId(deleteTarget.uid);
     try {
       await deleteEmployee(deleteTarget.uid);
       toast.success("Employee removed successfully");
@@ -265,7 +262,6 @@ export function EmployeesView() {
       toast.error(err?.message || "Failed to remove employee");
     } finally {
       setDeleteTarget(null);
-      setIsDeletingId(null);
     }
   };
 

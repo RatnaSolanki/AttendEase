@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -46,7 +45,6 @@ export default function AdminSidebar({
   onViewChange,
   userName,
   orgName,
-  onLogout,
 }: AdminSidebarProps) {
   return (
     <Sidebar className="border-r bg-white w-64">

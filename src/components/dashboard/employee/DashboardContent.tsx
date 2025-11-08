@@ -58,7 +58,6 @@ export default function DashboardContent() {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [pollingEnabled, setPollingEnabled] = useState(false);
 
-  const [isCheckedIn, setIsCheckedIn] = useState<boolean>(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -116,21 +115,6 @@ export default function DashboardContent() {
     return () => clearInterval(i);
   }, [pollingEnabled, loadAttendanceData]);
 
-  useEffect(() => {
-    if (!todayAttendance) {
-      setIsCheckedIn(false);
-      return;
-    }
-    const hasCheckout =
-      Boolean((todayAttendance as any).checkOutTime) ||
-      Boolean((todayAttendance as any).checkOutISO) ||
-      Boolean((todayAttendance as any).checkout) ||
-      Boolean((todayAttendance as any).checkedOut) ||
-      Boolean((todayAttendance as any).check_out) ||
-      Boolean((todayAttendance as any).checked_out_at);
-    setIsCheckedIn(!hasCheckout && Boolean(todayAttendance));
-  }, [todayAttendance]);
-
   const handleMarkAttendance = () => {
     if (!organization?.orgID) {
       toast.error("Organization information not found");
@@ -175,32 +159,6 @@ export default function DashboardContent() {
     } finally {
       setLoggingOut(false);
     }
-  };
-
-  const handleSlideToggle = async (nextChecked: boolean) => {
-    if (!organization?.orgID) {
-      toast.error("Organization information not found");
-      throw new Error("Organization information not found");
-    }
-
-    if (nextChecked) {
-      setLocationAction("checkin");
-      setLocationAttendanceDocId(null);
-      setShowLocationDialog(true);
-      return Promise.resolve();
-    }
-
-    const attendanceId =
-      (todayAttendance as any)?.id ?? (todayAttendance as any)?.docId ?? null;
-    if (!attendanceId) {
-      toast.error("No attendance record found to check out");
-      throw new Error("No attendance record found to check out");
-    }
-
-    setLocationAction("checkout");
-    setLocationAttendanceDocId(attendanceId);
-    setShowLocationDialog(true);
-    return Promise.resolve();
   };
 
   return (
@@ -308,7 +266,6 @@ export default function DashboardContent() {
 
               <MonthlyStatsGrid
                 stats={stats}
-                totalRecords={attendanceHistory.length}
                 attendanceHistory={attendanceHistory}
               />
 
