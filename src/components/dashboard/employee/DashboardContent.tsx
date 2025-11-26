@@ -7,12 +7,12 @@ import MarkAttendanceCard from "./MarkAttendanceCard";
 import TodayStatusCard from "./TodayStatusCard";
 import MonthlyStatsGrid from "./MonthlyStatsGrid";
 import RecentAttendanceList from "./RecentAttendanceList";
-import LocationDialog from "./LocationDialog";
 
 import {
   getTodayAttendance,
   getAttendanceHistory,
   getAttendanceStats,
+  getOfficeLocation,
   type AttendanceRecord,
 } from "@/lib/firebase/attendance";
 import { toast } from "sonner";
@@ -42,18 +42,15 @@ export default function DashboardContent() {
     attendanceRate: 0,
   });
 
-  const [showLocationDialog, setShowLocationDialog] = useState(false);
-  const [locationAction, setLocationAction] = useState<"checkin" | "checkout">(
-    "checkin",
-  );
-  const [locationAttendanceDocId, setLocationAttendanceDocId] = useState<
-    string | null
-  >(null);
+  // Office location state
+  const [officeLocation, setOfficeLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  }>({
+    latitude: 23.0225,
+    longitude: 72.5714,
+  });
 
-  const [locationStatus, setLocationStatus] = useState<
-    "idle" | "requesting" | "verifying" | "success" | "error"
-  >("idle");
-  const [locationMessage, setLocationMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [pollingEnabled, setPollingEnabled] = useState(false);
@@ -66,9 +63,35 @@ export default function DashboardContent() {
     (organization as any)?.settings?.shiftMinutes ??
     9 * 60;
 
+  // ✅ Load office location on mount
+  useEffect(() => {
+    if (organization?.orgID) {
+      getOfficeLocation(organization.orgID)
+        .then((loc) => {
+          setOfficeLocation(loc);
+          console.log("✅ Office location loaded:", loc);
+        })
+        .catch((err) => {
+          console.error("❌ Failed to load office location:", err);
+          // Keep default fallback
+          setOfficeLocation({
+            latitude: 23.0225,
+            longitude: 72.5714,
+          });
+        });
+    }
+  }, [organization?.orgID]);
+
+  // ✅ FIXED: Load attendance data with better logging
   const loadAttendanceData = useCallback(
     async (opts?: { suppressToast?: boolean }) => {
-      if (!user) return;
+      if (!user) {
+        console.log("⚠️ No user found, skipping attendance load");
+        return;
+      }
+
+      console.log("🔄 Loading attendance data for user:", user.uid);
+      
       try {
         setLoading(true);
         const [today, history, statistics] = await Promise.all([
@@ -76,6 +99,9 @@ export default function DashboardContent() {
           getAttendanceHistory(user.uid),
           getAttendanceStats(user.uid),
         ]);
+
+        console.log("📊 Today's attendance:", today);
+        console.log("📈 Stats:", statistics);
 
         setTodayAttendance(today);
         setAttendanceHistory(history);
@@ -86,9 +112,15 @@ export default function DashboardContent() {
         });
 
         setLastUpdated(Date.now());
+
+        if (!opts?.suppressToast) {
+          console.log("✅ Attendance data loaded successfully");
+        }
       } catch (error: any) {
-        console.error("Error loading attendance data:", error);
-        if (!opts?.suppressToast) toast.error("Failed to load attendance data");
+        console.error("❌ Error loading attendance data:", error);
+        if (!opts?.suppressToast) {
+          toast.error("Failed to load attendance data");
+        }
       } finally {
         setLoading(false);
       }
@@ -96,23 +128,33 @@ export default function DashboardContent() {
     [user],
   );
 
+  // Initial load
   useEffect(() => {
-    if (user) loadAttendanceData();
+    if (user) {
+      console.log("🚀 Initial attendance data load");
+      loadAttendanceData();
+    }
   }, [user, loadAttendanceData]);
 
+  // Listen for custom attendance update events
   useEffect(() => {
-    const onUpdated = () => loadAttendanceData();
+    const onUpdated = () => {
+      console.log("🔔 Attendance updated event received");
+      loadAttendanceData();
+    };
     window.addEventListener("attendance:updated", onUpdated);
     return () => window.removeEventListener("attendance:updated", onUpdated);
   }, [loadAttendanceData]);
 
+  // Auto-refresh polling
   useEffect(() => {
     if (!pollingEnabled) return;
-    const i = setInterval(
+    console.log("🔄 Auto-refresh enabled (30s interval)");
+    const interval = setInterval(
       () => loadAttendanceData({ suppressToast: true }),
       30_000,
     );
-    return () => clearInterval(i);
+    return () => clearInterval(interval);
   }, [pollingEnabled, loadAttendanceData]);
 
   const handleMarkAttendance = () => {
@@ -143,6 +185,7 @@ export default function DashboardContent() {
   };
 
   const handleManualRefresh = async () => {
+    console.log("🔄 Manual refresh triggered");
     await loadAttendanceData();
     toast.success("Dashboard refreshed");
   };
@@ -243,7 +286,7 @@ export default function DashboardContent() {
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold mb-1">
-                  Welcome, {user?.name}!
+                  Welcome, {user?.name || "User"}!
                 </h2>
                 <p className="text-sm sm:text-base text-gray-600">
                   Track your attendance and view your records
@@ -251,12 +294,15 @@ export default function DashboardContent() {
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
+                {/* ✅ FIXED: Pass loadAttendanceData as callback */}
                 <MarkAttendanceCard
                   todayAttendance={todayAttendance}
-                  onMarkAttendance={handleMarkAttendance}
-                  requestCheckoutVerification={
-                    handleRequestCheckoutVerification
-                  }
+                  onMarkAttendance={loadAttendanceData}
+                  officeLocation={{
+                    lat: officeLocation.latitude,
+                    lng: officeLocation.longitude,
+                  }}
+                  radiusMeters={50}
                 />
                 <TodayStatusCard
                   todayAttendance={todayAttendance}
@@ -326,21 +372,6 @@ export default function DashboardContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {organization?.orgID && (
-        <LocationDialog
-          orgId={organization.orgID}
-          open={showLocationDialog}
-          onOpenChange={setShowLocationDialog}
-          action={locationAction}
-          attendanceDocId={locationAttendanceDocId}
-          locationStatus={locationStatus}
-          setLocationStatus={setLocationStatus}
-          locationMessage={locationMessage}
-          setLocationMessage={setLocationMessage}
-          onAttendanceMarked={handleAttendanceMarked}
-        />
-      )}
     </>
   );
 }

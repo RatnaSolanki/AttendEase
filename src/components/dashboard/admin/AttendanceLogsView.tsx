@@ -34,6 +34,11 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { getAttendanceLogs, verifyAttendance } from "@/lib/firebase/admin";
+import { getTodayStats, getAttendanceTrend, getDepartmentStats } from "@/lib/firebase/analytics-service";
+import type { TodayStats, AttendanceTrendPoint, DepartmentStats } from "@/lib/firebase/analytics-service";
+import { TodayStatsCards } from "./analytics/TodayStatsCard";
+import { AttendanceTrendChart } from "./analytics/AttendanceTrendChart";
+import { DepartmentChart } from "./analytics/DepartmentChart";
 import { toast } from "sonner";
 import { AttendanceLog } from "./types";
 import { cn } from "@/lib/utils";
@@ -41,7 +46,7 @@ import { cn } from "@/lib/utils";
 const PAGE_SIZES = [10, 25, 50];
 
 export function AttendanceLogsView() {
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
 
   const [logs, setLogs] = useState<AttendanceLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +59,12 @@ export function AttendanceLogsView() {
 
   const [isVerifyingId, setIsVerifyingId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Analytics state
+  const [todayStats, setTodayStats] = useState<TodayStats | null>(null);
+  const [trendData, setTrendData] = useState<AttendanceTrendPoint[]>([]);
+  const [deptData, setDeptData] = useState<DepartmentStats[]>([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
   useEffect(() => {
     setPage(1);
@@ -73,9 +84,32 @@ export function AttendanceLogsView() {
     }
   }, [user?.uid]);
 
+  const fetchAnalytics = useCallback(async () => {
+    if (!organization?.orgID) return;
+    
+    setAnalyticsLoading(true);
+    try {
+      const [stats, trend, dept] = await Promise.all([
+        getTodayStats(organization.orgID),
+        getAttendanceTrend(organization.orgID, 7),
+        getDepartmentStats(organization.orgID),
+      ]);
+
+      setTodayStats(stats);
+      setTrendData(trend);
+      setDeptData(dept);
+    } catch (error) {
+      console.error("Analytics error:", error);
+      toast.error("Failed to load analytics");
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [organization?.orgID]);
+
   useEffect(() => {
     fetchLogs();
-  }, [fetchLogs]);
+    fetchAnalytics();
+  }, [fetchLogs, fetchAnalytics]);
 
   const filteredSortedLogs = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -207,7 +241,7 @@ export function AttendanceLogsView() {
   const hasActiveFilters = searchQuery || dateFilter;
 
   return (
-    <div className="w-full h-full px-4 py-6 space-y-4">
+    <div className="w-full h-full px-4 py-6 space-y-6">
       {/* Page Header */}
       <div>
         <h2 className="text-2xl font-bold">Attendance Logs</h2>
@@ -216,9 +250,38 @@ export function AttendanceLogsView() {
         </p>
       </div>
 
+      {/* Analytics Section */}
+      {analyticsLoading ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-28" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Skeleton className="h-80" />
+            <Skeleton className="h-80" />
+          </div>
+        </div>
+      ) : todayStats ? (
+        <div className="space-y-4">
+          {/* Today's Stats Cards */}
+          <TodayStatsCards stats={todayStats} />
+
+          {/* Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <AttendanceTrendChart data={trendData} />
+            <DepartmentChart data={deptData} />
+          </div>
+        </div>
+      ) : null}
+
+      {/* Divider */}
+      <Separator className="my-6" />
+
       {/* Toolbar */}
       <div className="flex flex-col lg:flex-row lg:items-center gap-3 pb-4 border-b">
-        {/* Shadcn-style Search Bar */}
+        {/* Search Bar */}
         <div
           className={cn(
             "relative w-full lg:w-80 transition-all duration-200",
@@ -363,7 +426,7 @@ export function AttendanceLogsView() {
             <span className="text-sm">Clear</span>
           </Button>
 
-          {/* Styled Export Button */}
+          {/* Export Button */}
           <Button
             size="sm"
             onClick={exportCSV}

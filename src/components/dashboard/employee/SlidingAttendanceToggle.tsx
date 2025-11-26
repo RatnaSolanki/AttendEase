@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Check, ArrowRight, Loader2 } from "lucide-react";
+import { useSound } from "@/hooks/useSound";
 
 interface SlidingAttendanceToggleProps {
   isCheckedIn: boolean;
@@ -24,10 +25,11 @@ export default function SlidingAttendanceToggle({
   const containerRef = useRef<HTMLDivElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
 
-  const SLIDE_THRESHOLD = 0.7; // 70% of the way triggers action
+  const { playCheckInSound, playCheckOutSound } = useSound();
+
+  const SLIDE_THRESHOLD = 0.7;
 
   useEffect(() => {
-    // Reset drag position when state changes
     setDragPosition(0);
   }, [isCheckedIn]);
 
@@ -60,21 +62,20 @@ export default function SlidingAttendanceToggle({
     const progress = dragPosition / maxDrag;
 
     if (progress >= SLIDE_THRESHOLD) {
-      // Slide completed - trigger action
       if (isCheckedIn) {
-        onCheckOut();
+        playCheckOutSound();
+        setTimeout(() => onCheckOut(), 150);
       } else {
-        onCheckIn();
+        playCheckInSound();
+        setTimeout(() => onCheckIn(), 150);
       }
     }
 
-    // Reset
     setIsDragging(false);
     setDragPosition(0);
     setStartX(0);
   };
 
-  // Mouse events
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     handleStart(e.clientX);
@@ -88,7 +89,6 @@ export default function SlidingAttendanceToggle({
     handleEnd();
   };
 
-  // Touch events
   const handleTouchStart = (e: React.TouchEvent) => {
     handleStart(e.touches[0].clientX);
   };
@@ -128,26 +128,26 @@ export default function SlidingAttendanceToggle({
       ref={containerRef}
       className={`
         relative h-14 rounded-full overflow-hidden
-        ${isCheckedIn ? "bg-green-100" : "bg-blue-100"}
+        w-full max-w-full
+        ${isCheckedIn ? "bg-green-100 dark:bg-green-950/20" : "bg-blue-100 dark:bg-blue-950/20"}
         ${disabled || loading ? "opacity-50 cursor-not-allowed" : "cursor-grab active:cursor-grabbing"}
         transition-colors duration-300
         shadow-inner
         select-none
       `}
-      style={{ width: "280px" }}
     >
-      {/* Background Text */}
-      <div className="absolute inset-0 flex items-center justify-end pr-4">
+      {/* Background Text - ✅ CENTERED */}
+      <div className="absolute inset-0 flex items-center justify-center">
         <span
-          className={`text-sm font-semibold ${
-            isCheckedIn ? "text-green-700" : "text-blue-700"
+          className={`text-xs sm:text-sm font-semibold ${
+            isCheckedIn ? "text-green-700 dark:text-green-400" : "text-blue-700 dark:text-blue-400"
           }`}
         >
           {isCheckedIn ? "Slide to Check Out →" : "Slide to Check In →"}
         </span>
       </div>
 
-      {/* Draggable Thumb */}
+      {/* Draggable Thumb - Responsive */}
       <div
         ref={thumbRef}
         onMouseDown={handleMouseDown}
@@ -155,30 +155,32 @@ export default function SlidingAttendanceToggle({
         style={thumbStyle}
         className={`
           absolute left-1 top-1 bottom-1
-          w-24 rounded-full
-          ${isCheckedIn ? "bg-green-600" : "bg-blue-600"}
+          w-20 sm:w-24 rounded-full
+          ${isCheckedIn ? "bg-green-600 dark:bg-green-700" : "bg-blue-600 dark:bg-blue-700"}
           flex items-center justify-center
           shadow-lg
           transition-colors duration-300
-          ${disabled || loading ? "" : "hover:scale-105"}
+          ${disabled || loading ? "" : "hover:scale-105 active:scale-95"}
         `}
       >
         {loading ? (
-          <Loader2 className="w-5 h-5 text-white animate-spin" />
+          <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 text-white animate-spin" />
         ) : isCheckedIn ? (
-          <ArrowRight className="w-5 h-5 text-white" />
+          <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
         ) : (
-          <Check className="w-5 h-5 text-white" />
+          <Check className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
         )}
       </div>
 
-      {/* Progress indicator (optional) */}
+      {/* Progress indicator */}
       {isDragging && containerRef.current && thumbRef.current && (
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
             background: `linear-gradient(to right, ${
-              isCheckedIn ? "rgba(34, 197, 94, 0.2)" : "rgba(59, 130, 246, 0.2)"
+              isCheckedIn 
+                ? "rgba(34, 197, 94, 0.2)" 
+                : "rgba(59, 130, 246, 0.2)"
             } 0%, transparent ${
               (dragPosition /
                 (containerRef.current.offsetWidth -
