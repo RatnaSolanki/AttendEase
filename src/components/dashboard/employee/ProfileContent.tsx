@@ -488,15 +488,18 @@ export default function ProfileContent() {
               </div>
             </div>
 
+            {/* ✅ FIXED: Changed <p> to <div> to fix hydration error */}
             {!isEditing && (
               <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-4 shadow-sm">
-                <p className="text-sm text-blue-800 dark:text-blue-300 flex items-start gap-3 font-medium">
+                <div className="text-sm text-blue-800 dark:text-blue-300 flex items-start gap-3 font-medium">
                   <div className="w-5 h-5 rounded-full bg-blue-500/10 flex items-center justify-center mt-0.5 flex-shrink-0">
                     <Shield className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                   </div>
-                  Click "Edit Profile" to update your information. Changes will
-                  be reflected across your account.
-                </p>
+                  <span>
+                    Click "Edit Profile" to update your information. Changes will
+                    be reflected across your account.
+                  </span>
+                </div>
               </div>
             )}
           </div>

@@ -1,5 +1,3 @@
-// lib/firebase/admin.ts - COMPLETE FIXED VERSION
-
 import {
   collection,
   query,
@@ -58,52 +56,47 @@ export interface OrganizationData {
   };
 }
 
-/**
- * NormalizedActivity:
- * The summary.recentActivity entries returned by getTodayAttendanceSummary
- * should include these normalized fields so the UI can rely on them.
- */
 export interface NormalizedActivity {
   userName: string;
   userEmail?: string;
   userId: string;
   status?: string;
-  // Normalized timestamps / times
-  checkInISO?: string | null; // ISO string (preferred)
-  checkOutISO?: string | null; // ISO string (preferred)
-  checkInTime?: string | null; // human formatted time
-  checkOutTime?: string | null; // human formatted time
-  // Computed fields
+  checkInISO?: string | null;
+  checkOutISO?: string | null;
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
   isCheckedOut?: boolean;
   workedMinutes?: number | null;
-  // Keep original doc for debugging if desired
+  shiftMinutes?: number;
   original?: any;
 }
 
-/**
- * AttendanceSummary used by UI/dashboard
- */
 interface AttendanceSummary {
   present: number;
   absent: number;
   late: number;
-  // recentActivity now holds NormalizedActivity objects
   recentActivity: NormalizedActivity[];
 }
+
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
 
+function getLocalDateString(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 async function getAdminDoc(adminUid: string) {
   try {
-    // Try direct lookup first
     const directRef = doc(db, "users", adminUid);
     const directSnap = await getDoc(directRef);
     if (directSnap.exists()) {
       return { id: directSnap.id, data: directSnap.data() as any };
     }
 
-    // Fallback: query by uid field
     const adminQuery = query(
       collection(db, "users"),
       where("uid", "==", adminUid),
@@ -126,7 +119,7 @@ function getOrgId(adminData: any): string | null {
 }
 
 // ============================================
-// EMPLOYEES
+// EMPLOYEES (✅ ONLY EMPLOYEES, NO ADMINS)
 // ============================================
 
 export async function getOrganizationEmployees(
@@ -137,25 +130,31 @@ export async function getOrganizationEmployees(
 
     const adminDoc = await getAdminDoc(adminUid);
     if (!adminDoc) {
-      console.error(" Admin user not found");
+      console.error("❌ Admin user not found");
       return [];
     }
 
     const organizationId = getOrgId(adminDoc.data);
     if (!organizationId) {
-      console.error("Admin has no organization");
+      console.error("❌ Admin has no organization");
       return [];
     }
 
-    console.log("Organization ID:", organizationId);
+    console.log("🏢 Organization ID:", organizationId);
 
-    // Query by organizationId OR orgID
+    // ✅ ONLY GET EMPLOYEES (exclude admins)
     const employeesRef = collection(db, "users");
-
-    // Try both field names
     const queries = [
-      query(employeesRef, where("organizationId", "==", organizationId)),
-      query(employeesRef, where("orgID", "==", organizationId)),
+      query(
+        employeesRef,
+        where("organizationId", "==", organizationId),
+        where("role", "==", "employee")
+      ),
+      query(
+        employeesRef,
+        where("orgID", "==", organizationId),
+        where("role", "==", "employee")
+      ),
     ];
 
     const results = await Promise.all(
@@ -197,7 +196,7 @@ export async function getOrganizationEmployees(
       };
     });
 
-    console.log("✅ Found employees:", employees.length);
+    console.log("✅ Found employees (excluding admins):", employees.length);
     return employees;
   } catch (error) {
     console.error("❌ Error fetching employees:", error);
@@ -272,7 +271,7 @@ export async function deleteEmployee(employeeUid: string): Promise<void> {
     // Delete attendance records
     const attendanceQuery = query(
       collection(db, "attendance"),
-      where("userID", "==", employeeUid),
+      where("userId", "==", employeeUid),
     );
     const attendanceSnapshot = await getDocs(attendanceQuery);
     const deletePromises = attendanceSnapshot.docs.map((d) => deleteDoc(d.ref));
@@ -284,7 +283,7 @@ export async function deleteEmployee(employeeUid: string): Promise<void> {
 }
 
 // ============================================
-// ATTENDANCE SUMMARY
+// ATTENDANCE SUMMARY (✅ ONLY EMPLOYEES)
 // ============================================
 
 export async function getTodayAttendanceSummary(
@@ -300,42 +299,41 @@ export async function getTodayAttendanceSummary(
       return { present: 0, absent: 0, late: 0, recentActivity: [] };
     }
 
-    console.log("👥 Total employees:", employees.length);
+    console.log("👥 Total employees (excluding admins):", employees.length);
 
-    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const todayStr = getLocalDateString();
+    console.log("📅 Today's date:", todayStr);
 
-    // Get all attendance for today
+    const adminDoc = await getAdminDoc(adminUid);
+    const organizationId = getOrgId(adminDoc?.data);
+
     const attendanceRef = collection(db, "attendance");
-    const todayQuery = query(
-      attendanceRef,
-      where("date", "==", today),
-      orderBy("timestamp", "desc"),
-    );
+    const todayQuery = query(attendanceRef, where("organizationId", "==", organizationId));
 
     const attendanceSnapshot = await getDocs(todayQuery);
-    console.log("📋 Total attendance records today:", attendanceSnapshot.size);
+    console.log("📋 Total attendance records fetched:", attendanceSnapshot.size);
 
-    // Create a map of employee UIDs for quick lookup
+    const todayRecords = attendanceSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter((record: any) => record.date === todayStr);
+
+    console.log("📋 Today's attendance records:", todayRecords.length);
+
     const employeeMap = new Map(employees.map((e) => [e.uid, e]));
-
     const checkedInEmployees = new Set<string>();
-    const recentActivity: AttendanceSummary["recentActivity"] = [];
+    const recentActivity: NormalizedActivity[] = [];
 
-    // helper: normalize various timestamp/value types to ISO string or null
     const normalizeToISO = (v: any): string | null => {
       if (v == null) return null;
-      // Firestore Timestamp
       if (typeof v === "object" && typeof v.toDate === "function") {
         const d = v.toDate();
         return isNaN(d.getTime()) ? null : d.toISOString();
       }
-      // numeric seconds or ms
       if (typeof v === "number") {
         const ms = v > 1e12 ? v : v * 1000;
         const d = new Date(ms);
         return isNaN(d.getTime()) ? null : d.toISOString();
       }
-      // string
       try {
         const d = new Date(String(v));
         return isNaN(d.getTime()) ? null : d.toISOString();
@@ -353,101 +351,30 @@ export async function getTodayAttendanceSummary(
           : d.toLocaleTimeString("en-US", {
               hour: "2-digit",
               minute: "2-digit",
+              hour12: true,
             });
       } catch {
         return null;
       }
     };
 
-    // iterate attendance docs
-    attendanceSnapshot.docs.forEach((docSnap) => {
-      const data = docSnap.data() as any;
-      const userId = data.userID || data.userId || data.uid || "";
+    todayRecords.forEach((data: any) => {
+      const userId = data.userId || data.userID || data.uid || "";
       if (!userId) return;
 
-      // Only include if this employee belongs to our organization
       if (!employeeMap.has(userId)) return;
 
-      // mark checked-in (we will refine checked-out later)
       checkedInEmployees.add(userId);
-
       const employee = employeeMap.get(userId)!;
 
-      // possible sources for check-in/out (try many variants)
-      const possibleCheckInSources = [
-        data.checkInISO,
-        data.checkInTimestamp,
-        data.checkInAt,
-        data.check_in_iso,
-        data.check_in_timestamp,
-        data.check_in_at,
-        data.checkIn,
-        data.check_in,
-        data.timestamp, // often the doc timestamp is check-in
-        data.timestamp?.toDate?.() ?? null,
-      ];
+      const checkInISO = normalizeToISO(data.timestamp || data.checkInISO || data.checkInTimestamp);
+      const checkOutISO = normalizeToISO(data.checkOutISO || data.checkOutTimestamp || data.checkoutTimestamp);
 
-      const possibleCheckOutSources = [
-        data.checkOutISO,
-        data.checkOutTimestamp,
-        data.checkOutAt,
-        data.check_out_iso,
-        data.check_out_timestamp,
-        data.check_out_at,
-        data.checkOut,
-        data.check_out,
-        data.checkout,
-        data.checkoutAt,
-        data.checkoutTimestamp,
-        data.checkout_ts,
-        data.checked_out_at,
-        data.check_out_time,
-        data.checkOutTime,
-        data.checkOutFormatted,
-      ];
+      const checkInTime = data.checkInTime || formatTimeFromISO(checkInISO);
+      const checkOutTime = data.checkOutTime || formatTimeFromISO(checkOutISO);
 
-      // select first non-null
-      const pickFirst = (arr: any[]) => {
-        for (const v of arr) {
-          if (v !== undefined && v !== null && String(v).trim() !== "")
-            return v;
-        }
-        return null;
-      };
+      const isCheckedOut = Boolean(checkOutISO || checkOutTime);
 
-      const rawCheckIn = pickFirst(possibleCheckInSources);
-      const rawCheckOut = pickFirst(possibleCheckOutSources);
-
-      // Normalize to ISO when possible
-      const checkInISO = normalizeToISO(rawCheckIn) || null;
-      const checkOutISO = normalizeToISO(rawCheckOut) || null;
-
-      // formatted times - prefer explicit formatted fields, then ISO formatting
-      const checkInTime =
-        data.checkInTime ??
-        data.checkInFormatted ??
-        (checkInISO ? formatTimeFromISO(checkInISO) : null) ??
-        null;
-
-      const checkOutTime =
-        data.checkOutTime ??
-        data.checkOutFormatted ??
-        (checkOutISO ? formatTimeFromISO(checkOutISO) : null) ??
-        null;
-
-      // explicit boolean flags
-      const explicitCheckedOut =
-        data.isCheckedOut === true ||
-        data.checkedOut === true ||
-        data.hasCheckedOut === true;
-
-      // If any checkout-like value exists, consider this checked out.
-      const isCheckedOut =
-        Boolean(checkOutISO) ||
-        (typeof checkOutTime === "string" && checkOutTime.trim() !== "") ||
-        explicitCheckedOut;
-
-      // compute worked minutes when possible
       let workedMinutes: number | null = null;
       if (checkInISO && checkOutISO) {
         const s = new Date(checkInISO);
@@ -455,70 +382,39 @@ export async function getTodayAttendanceSummary(
         if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
           workedMinutes = Math.round((e.getTime() - s.getTime()) / (1000 * 60));
         }
-      } else if (checkInISO && !checkOutISO && checkOutTime) {
-        // best-effort parse using checkIn date and checkOutTime string
-        try {
-          const datePart = new Date(checkInISO).toISOString().split("T")[0]; // YYYY-MM-DD
-          const parsed = new Date(`${datePart} ${checkOutTime}`);
-          if (!isNaN(parsed.getTime())) {
-            const s = new Date(checkInISO);
-            workedMinutes = Math.round(
-              (parsed.getTime() - s.getTime()) / (1000 * 60),
-            );
-          }
-        } catch {
-          workedMinutes = null;
-        }
       }
-
-      // status and timestamp fallback
-      const status = data.status ?? "present";
-      const fallbackTimestamp = data.timestamp?.toDate
-        ? data.timestamp.toDate()
-        : data.timestamp
-          ? new Date(data.timestamp)
-          : new Date();
-      const fallbackCheckInTime =
-        checkInTime ||
-        (fallbackTimestamp
-          ? fallbackTimestamp.toLocaleTimeString("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : null);
 
       recentActivity.push({
         userName: employee.name,
         userEmail: employee.email,
-        checkInTime: fallbackCheckInTime,
-        checkOutTime: checkOutTime ?? null,
+        userId,
+        status: data.status || "present",
         checkInISO,
         checkOutISO,
-        userId,
-        status,
+        checkInTime,
+        checkOutTime,
         isCheckedOut,
         workedMinutes,
+        shiftMinutes: 540, // 9 hours default
       });
     });
 
     const presentCount = checkedInEmployees.size;
     const absentCount = Math.max(0, employees.length - presentCount);
 
-    // Calculate late count (after 9:30 AM) using timestamp fields if available
-    const lateThreshold = new Date();
-    lateThreshold.setHours(9, 30, 0, 0);
-    const lateCount = attendanceSnapshot.docs.filter((docSnap) => {
-      const d = docSnap.data() as any;
-      const ts =
-        d.timestamp?.toDate?.() ?? (d.timestamp ? new Date(d.timestamp) : null);
-      return ts && ts > lateThreshold;
+    const lateCount = todayRecords.filter((data: any) => {
+      if (!data.checkInTime) return false;
+      const match = data.checkInTime.match(/(\d{1,2}):(\d{2})/);
+      if (!match) return false;
+      const [_, hours, minutes] = match.map(Number);
+      return hours > 9 || (hours === 9 && minutes > 30);
     }).length;
 
     console.log("✅ Summary:", {
       present: presentCount,
       absent: absentCount,
       late: lateCount,
-      recentActivity: recentActivity.length,
+      total: employees.length,
     });
 
     return {
@@ -538,34 +434,45 @@ export async function getTodayAttendanceSummary(
     return { present: 0, absent: 0, late: 0, recentActivity: [] };
   }
 }
+
 // ============================================
-// ATTENDANCE LOGS
+// ATTENDANCE LOGS (✅ ONLY EMPLOYEES)
 // ============================================
 
 export async function getAttendanceLogs(
   adminUid: string,
 ): Promise<AttendanceLog[]> {
   try {
+    console.log("📋 Fetching attendance logs for admin:", adminUid);
+
     const employees = await getOrganizationEmployees(adminUid);
-    if (employees.length === 0) return [];
+    if (employees.length === 0) {
+      console.log("⚠️ No employees found");
+      return [];
+    }
+
+    const adminDoc = await getAdminDoc(adminUid);
+    const organizationId = getOrgId(adminDoc?.data);
+
+    console.log("🏢 Organization ID:", organizationId);
 
     const attendanceQuery = query(
       collection(db, "attendance"),
-      orderBy("timestamp", "desc"),
-      limit(100),
+      where("organizationId", "==", organizationId),
+      limit(100)
     );
 
     const attendanceSnapshot = await getDocs(attendanceQuery);
-    const employeeMap = new Map(employees.map((e) => [e.uid, e]));
+    console.log("📋 Total attendance records fetched:", attendanceSnapshot.size);
 
+    const employeeMap = new Map(employees.map((e) => [e.uid, e]));
     const logs: AttendanceLog[] = [];
 
     attendanceSnapshot.docs.forEach((d) => {
       const data = d.data() as any;
-      const userId = data.userID || data.userId || "";
+      const userId = data.userId || data.userID || "";
       const employee = employeeMap.get(userId);
 
-      // Only include if employee belongs to our org
       if (employee) {
         const timestamp = data.timestamp?.toDate() || new Date();
 
@@ -573,34 +480,48 @@ export async function getAttendanceLogs(
           id: d.id,
           userId,
           userName: employee.name,
-          date: data.date || timestamp.toISOString().split("T")[0],
-          checkInTime:
-            data.checkInTime ||
+          date: data.date || getLocalDateString(timestamp),
+          checkInTime: data.checkInTime ||
             timestamp.toLocaleTimeString("en-US", {
               hour: "2-digit",
               minute: "2-digit",
+              hour12: true,
             }),
           checkOutTime: data.checkOutTime,
           status: data.status || "present",
           location: data.location || data.coordinates,
-          verified: data.locationVerified || false,
+          verified: data.locationVerified || data.verified || false,
         });
       }
     });
 
-    return logs;
+    logs.sort((a, b) => {
+      const dateA = new Date(a.date + ' ' + (a.checkInTime || '00:00'));
+      const dateB = new Date(b.date + ' ' + (b.checkInTime || '00:00'));
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    console.log("✅ Attendance logs fetched:", logs.length);
+
+    return logs.slice(0, 100);
   } catch (error) {
-    console.error("Error fetching attendance logs:", error);
+    console.error("❌ Error fetching attendance logs:", error);
     return [];
   }
 }
 
+// ✅ ADD THIS FUNCTION (MISSING)
 export async function verifyAttendance(logId: string): Promise<void> {
   try {
+    console.log("✅ Verifying attendance:", logId);
     const attendanceRef = doc(db, "attendance", logId);
-    await updateDoc(attendanceRef, { locationVerified: true });
+    await updateDoc(attendanceRef, { 
+      verified: true, 
+      locationVerified: true 
+    });
+    console.log("✅ Attendance verified successfully");
   } catch (error) {
-    console.error("Error verifying attendance:", error);
+    console.error("❌ Error verifying attendance:", error);
     throw error;
   }
 }
@@ -628,8 +549,8 @@ export async function getOrganizationData(
         orgID: organizationId,
         name: "My Organization",
         officeLocation: {
-          latitude: 37.7749,
-          longitude: -122.4194,
+          latitude: 23.0225,
+          longitude: 72.5714,
           radius: 100,
         },
       };
@@ -641,8 +562,8 @@ export async function getOrganizationData(
       orgID: orgData.orgID || orgSnap.id,
       name: orgData.name || "My Organization",
       officeLocation: orgData.officeLocation || {
-        latitude: 37.7749,
-        longitude: -122.4194,
+        latitude: 23.0225,
+        longitude: 72.5714,
         radius: 100,
       },
     };
@@ -684,7 +605,7 @@ export async function updateOrganizationLocation(
 }
 
 // ============================================
-// REPORTS
+// REPORTS (✅ ONLY EMPLOYEES)
 // ============================================
 
 export async function generateReport(
@@ -715,7 +636,7 @@ export async function generateReport(
     const reportData: any[] = attendanceSnapshot.docs
       .map((d) => {
         const data = d.data() as any;
-        const userId = data.userID || data.userId || "";
+        const userId = data.userId || data.userID || "";
         const employee = employeeMap.get(userId);
 
         if (!employee) return null;
@@ -726,12 +647,12 @@ export async function generateReport(
           EmployeeName: employee.name,
           Email: employee.email,
           Department: employee.department || "N/A",
-          Date: timestamp.toISOString().split("T")[0],
-          CheckIn:
-            data.checkInTime ||
+          Date: getLocalDateString(timestamp),
+          CheckIn: data.checkInTime ||
             timestamp.toLocaleTimeString("en-US", {
               hour: "2-digit",
               minute: "2-digit",
+              hour12: true,
             }),
           CheckOut: data.checkOutTime || "N/A",
           Status: data.status || "present",
