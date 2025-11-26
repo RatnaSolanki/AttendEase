@@ -115,6 +115,7 @@ export default function SlidingAttendanceToggle({
         window.removeEventListener("touchend", handleTouchEnd);
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging, startX, dragPosition]);
 
   const thumbStyle = {

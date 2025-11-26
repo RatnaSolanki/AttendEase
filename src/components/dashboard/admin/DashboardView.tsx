@@ -59,7 +59,7 @@ const formatMinutesCompact = (
 };
 
 interface DashboardViewProps {
-  onLogout: () => void;
+  onLogout?: () => void;
 }
 
 export function DashboardView({ onLogout }: DashboardViewProps) {

@@ -2,7 +2,6 @@
 
 import { Card } from "@/components/ui/card";
 import { type AttendanceRecord } from "@/lib/firebase/attendance";
-import { Fragment } from "react";
 
 interface Props {
   stats: {
@@ -10,7 +9,6 @@ interface Props {
     totalWorkingDays: number;
     attendanceRate: number;
   };
-  totalRecords: number;
   attendanceHistory: AttendanceRecord[]; // required
 }
 
@@ -45,7 +43,6 @@ function Sparkline({
 
   // normalize series to 0..1
   const max = Math.max(...data.map((v) => Math.abs(v)), 1);
-  const min = Math.min(...data.map((v) => v));
   const len = data.length;
   const px = (i: number) => (i / Math.max(1, len - 1)) * width;
   const py = (v: number) => {
@@ -91,7 +88,6 @@ function computeOvertimeSeries(history: AttendanceRecord[], points = 8) {
 
 export default function MonthlyStatsGrid({
   stats,
-  totalRecords,
   attendanceHistory,
 }: Props) {
   const overtimeSeries = computeOvertimeSeries(attendanceHistory, 12);

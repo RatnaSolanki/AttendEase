@@ -11,7 +11,6 @@ import {
   User,
   ChevronLeft,
   Building2,
-  Settings,
   Bell,
   CreditCard,
 } from "lucide-react";

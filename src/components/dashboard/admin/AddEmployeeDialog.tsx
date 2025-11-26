@@ -20,7 +20,6 @@ import {
   Mail,
   Lock,
   Briefcase,
-  X,
   Check,
   AlertCircle,
   UserPlus,

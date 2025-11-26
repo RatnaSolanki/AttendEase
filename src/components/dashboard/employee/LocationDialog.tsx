@@ -66,6 +66,26 @@ export default function LocationDialog({
       setUserLocation(null);
       return;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const distanceMeters = (
+    a: { latitude: number; longitude: number },
+    b: { latitude: number; longitude: number },
+  ) => {
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    const R = 6371000;
+    const dLat = toRad(b.latitude - a.latitude);
+    const dLon = toRad(b.longitude - a.longitude);
+    const lat1 = toRad(a.latitude);
+    const lat2 = toRad(b.latitude);
+    const sinDLat = Math.sin(dLat / 2);
+    const sinDLon = Math.sin(dLon / 2);
+    const aHarv =
+      sinDLat * sinDLat + sinDLon * sinDLon * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.atan2(Math.sqrt(aHarv), Math.sqrt(1 - aHarv));
+    return R * c;
+  };
 
     if (locationStatus !== "idle") return;
 

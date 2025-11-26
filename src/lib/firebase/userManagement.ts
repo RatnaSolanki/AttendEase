@@ -11,8 +11,6 @@ import {
   getDoc,
   updateDoc,
   collection,
-  query,
-  where,
   getDocs,
   arrayUnion,
 } from "firebase/firestore";

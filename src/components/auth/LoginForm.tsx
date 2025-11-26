@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +15,6 @@ interface LoginFormProps {
 }
 
 export function LoginForm({ onBack, onSwitchToSignup }: LoginFormProps) {
-  const router = useRouter();
   const { login } = useAuth();
 
   const [loading, setLoading] = useState(false);

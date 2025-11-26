@@ -157,6 +157,33 @@ export default function DashboardContent() {
     return () => clearInterval(interval);
   }, [pollingEnabled, loadAttendanceData]);
 
+  const handleMarkAttendance = () => {
+    if (!organization?.orgID) {
+      toast.error("Organization information not found");
+      return;
+    }
+    setLocationStatus("idle");
+    setLocationMessage("");
+    setLocationAction("checkin");
+    setLocationAttendanceDocId(null);
+    setShowLocationDialog(true);
+  };
+
+  const handleRequestCheckoutVerification = (attendanceId: string | null) => {
+    if (!organization?.orgID) {
+      toast.error("Organization information not found");
+      return;
+    }
+    setLocationAction("checkout");
+    setLocationAttendanceDocId(attendanceId ?? null);
+    setShowLocationDialog(true);
+  };
+
+  const handleAttendanceMarked = () => {
+    loadAttendanceData();
+    toast.success("Attendance recorded");
+  };
+
   const handleManualRefresh = async () => {
     console.log("🔄 Manual refresh triggered");
     await loadAttendanceData();
@@ -285,7 +312,6 @@ export default function DashboardContent() {
 
               <MonthlyStatsGrid
                 stats={stats}
-                totalRecords={attendanceHistory.length}
                 attendanceHistory={attendanceHistory}
               />
 
