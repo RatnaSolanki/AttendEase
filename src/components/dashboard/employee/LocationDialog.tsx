@@ -87,6 +87,8 @@ export default function LocationDialog({
     return R * c;
   };
 
+  // Request location when dialog opens
+  useEffect(() => {
     if (locationStatus !== "idle") return;
 
     setLocationStatus("requesting");
